@@ -1,5 +1,7 @@
 # JChatMind · AI 智能体助手
 
+![License](https://img.shields.io/github/license/moondream69/JChatMind)
+
 一个基于 **Spring AI** 的 Java Agent 系统：通过 **Think-Execute 循环**实现自主决策与多步任务规划，具备工具调用框架、RAG 知识库检索、多模型切换和 SSE 实时状态推送能力。
 
 它不是"调一次 API 返回文本"的聊天机器人，而是一个能规划、能调用工具、能检索知识库、并把执行过程实时展示给用户的 **Agent**。
