@@ -70,17 +70,22 @@
     </select>
 
     <select id="selectBySessionIdRecently" resultMap="BaseResultMap">
-        SELECT id,
-               session_id,
-               role,
-               content,
-               metadata::text AS metadata,
-               created_at,
-               updated_at
-        FROM chat_message
-        WHERE session_id = CAST(#{sessionId} AS uuid)
-        ORDER BY created_at
-        LIMIT #{limit}
+        <!-- 取最近 N 条记忆：先按时间倒序取前 N 条，再正序返回（保证聊天记录按时间顺序进入记忆） -->
+        SELECT t.id,
+               t.session_id,
+               t.role,
+               t.content,
+               t.metadata::text AS metadata,
+               t.created_at,
+               t.updated_at
+        FROM (
+            SELECT id, session_id, role, content, metadata, created_at, updated_at
+            FROM chat_message
+            WHERE session_id = CAST(#{sessionId} AS uuid)
+            ORDER BY created_at DESC
+            LIMIT #{limit}
+        ) t
+        ORDER BY t.created_at ASC
     </select>
 
     <delete id="deleteById">
