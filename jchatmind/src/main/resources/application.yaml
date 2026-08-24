@@ -1,9 +1,12 @@
 spring:
   application:
     name: jchatmind
-  # 加载工作目录下的 .env 文件（optional: 表示文件不存在也不报错）
+  # 加载 .env 文件（optional: 表示文件不存在也不报错）。两条路径兼容两种启动方式：
+  # 工作目录 = 仓库根（IDEA 默认）→ 命中 ./jchatmind/.env；工作目录 = jchatmind/（CLI）→ 命中 ./.env
   config:
-    import: optional:file:.env[.properties]
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:./jchatmind/.env[.properties]
   datasource:
     url: jdbc:postgresql://localhost:5432/jchatmind
     username: ${DB_USERNAME:root}

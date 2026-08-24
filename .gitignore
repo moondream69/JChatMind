@@ -6,3 +6,7 @@ data/
 
 # 本地环境变量（含密钥）
 .env
+
+# 浏览器自动化测试产物与个人技能
+.playwright-cli/
+.claude/skills/

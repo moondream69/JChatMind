@@ -72,7 +72,7 @@ npm run lint                   # eslint
 ## 配置体系
 
 - `application.yaml` 中敏感项全部为 `${ENV}` 占位符，无默认值的关键项（模型 Key、邮箱）缺失即启动失败；
-- 本地密钥在 `jchatmind/.env`（gitignore 忽略，模板 `.env.example`），通过 `spring.config.import: optional:file:.env[.properties]` 加载——**改 .env 后必须重启应用**（配置在启动时解析，无热加载）；
+- 本地密钥在 `jchatmind/.env`（gitignore 忽略，模板 `.env.example`），通过 `spring.config.import` 的两条 optional 路径加载（`.env` 与 `./jchatmind/.env`），兼容 CLI（`cd jchatmind`，工作目录=`jchatmind/`）与 IDEA（工作目录=仓库根）两种启动方式——路径相对工作目录解析，找不到时静默跳过，若都找不到则 Key 缺失导致启动失败；**改 .env 后必须重启应用**（配置在启动时解析，无热加载）；
 - 数据库账号密码有默认值兜底（`${DB_USERNAME:root}`），**不要**在新配置里把密钥写成 yaml 默认值。
 
 ## 分层约定
