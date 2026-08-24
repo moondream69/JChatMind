@@ -7,32 +7,26 @@ import {
   DownOutlined,
 } from "@ant-design/icons";
 import { Sender } from "@ant-design/x";
-import { useNavigate } from "react-router-dom";
-import {
-  type AgentVO,
-  createChatMessage,
-  createChatSession,
-} from "../../../api/api.ts";
+import type { AgentVO } from "../../../api/api.ts";
 import { getAgentEmoji } from "../../../utils";
-import { useChatSessions } from "../../../hooks/useChatSessions.ts";
 
 const { Title, Text } = Typography;
 
-interface DefaultAgentChatViewProps {
-  handleSendMessage: (message: string) => void;
-  loading: boolean;
+interface EmptyAgentChatViewProps {
   agents: AgentVO[];
+  /** 等待 AI 终态期间置 true */
+  sending?: boolean;
+  /** 发送首条消息（会内部创建会话并跳转），失败返回 false */
+  onSend: (message: string, agentId: string) => Promise<boolean>;
 }
 
-const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
-  loading,
+const EmptyAgentChatView: React.FC<EmptyAgentChatViewProps> = ({
   agents,
+  sending = false,
+  onSend,
 }) => {
   const [message, setMessage] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-
-  const navigate = useNavigate();
-  const { refreshChatSessions } = useChatSessions();
 
   // 为每个 agent 生成 emoji
   const agentsWithEmoji = useMemo(() => {
@@ -154,27 +148,15 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
         <div className="px-4 pb-4 pt-4">
           <Sender
             onSubmit={async () => {
-              if (!effectiveAgentId) return;
-              console.log("发送消息", message);
-              const response = await createChatSession({
-                agentId: effectiveAgentId,
-                title: message.slice(0, 20),
-              });
-              await createChatMessage({
-                sessionId: response.chatSessionId ?? "",
-                content: message,
-                role: "user",
-                agentId: effectiveAgentId,
-              });
-              // 刷新聊天会话列表
-              await refreshChatSessions();
-              setMessage("");
-              navigate(
-                `/chat/${response.chatSessionId}`,
-              );
+              if (!effectiveAgentId || !message.trim()) return;
+              const ok = await onSend(message.trim(), effectiveAgentId);
+              // 只有发送成功才清空输入框，失败时保留文字供重试
+              if (ok) {
+                setMessage("");
+              }
             }}
             value={message}
-            loading={loading}
+            loading={sending}
             placeholder="输入消息开始对话..."
             onChange={(value) => {
               setMessage(value);

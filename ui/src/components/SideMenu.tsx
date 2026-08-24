@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { RobotOutlined } from "@ant-design/icons";
 import { Tabs, type TabsProps } from "antd";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import AgentTabContent from "./tabs/AgentTabContent.tsx";
 import AddAgentModal from "./modals/AddAgentModal.tsx";
 import ChatTabContent from "./tabs/ChatTabContent.tsx";
@@ -10,11 +10,7 @@ import AddKnowledgeBaseModal from "./modals/AddKnowledgeBaseModal.tsx";
 import { useAgents } from "../hooks/useAgents.ts";
 import { useKnowledgeBases } from "../hooks/useKnowledgeBases.ts";
 
-interface SideMenuProps {
-  children?: React.ReactNode;
-}
-
-const SideMenu: React.FC<SideMenuProps> = () => {
+const SideMenu: React.FC = () => {
   const navigate = useNavigate();
 
   const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
@@ -38,18 +34,26 @@ const SideMenu: React.FC<SideMenuProps> = () => {
   const { agents, createAgentHandle, deleteAgentHandle, updateAgentHandle } =
     useAgents();
 
-  const [activeKey, setActiveKey] = useState(() => {
+  // tab 选中态由路由派生，与 URL 保持双向同步
+  const location = useLocation();
+  const activeKey = useMemo(() => {
     if (location.pathname.startsWith("/agent")) return "agent";
     if (location.pathname.startsWith("/knowledge-base")) return "knowledgeBase";
     if (location.pathname.startsWith("/chat")) return "chat";
     return "agent";
-  });
+  }, [location.pathname]);
 
   const { knowledgeBases, createKnowledgeBaseHandle } = useKnowledgeBases();
 
-  // 处理标签页切换
+  // 切换 tab 时导航到对应路由
   const handleTabChange = (key: string) => {
-    setActiveKey(key);
+    if (key === "agent") {
+      navigate("/agent");
+    } else if (key === "chat") {
+      navigate("/chat");
+    } else if (key === "knowledgeBase") {
+      navigate("/knowledge-base");
+    }
   };
 
   const items: TabsProps["items"] = [
@@ -59,7 +63,6 @@ const SideMenu: React.FC<SideMenuProps> = () => {
       children: (
         <AgentTabContent
           agents={agents}
-          onSelectAgent={() => {}}
           onCreateAgentClick={toggleAddAgentModal}
           onEditAgent={(agent) => {
             setEditingAgent(agent);
@@ -104,7 +107,6 @@ const SideMenu: React.FC<SideMenuProps> = () => {
           activeKey={activeKey}
           onChange={handleTabChange}
           items={items}
-          // className="h-full flex flex-col [&_.ant-tabs-content-holder]:flex-1 [&_.ant-tabs-content-holder]:min-h-0 [&_.ant-tabs-content]:h-full [&_.ant-tabs-tabpane]:h-full"
         />
       </div>
       <AddAgentModal

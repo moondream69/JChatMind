@@ -82,6 +82,10 @@ public class ChatMessageFacadeServiceImpl implements ChatMessageFacadeService {
     @Override
     public CreateChatMessageResponse createChatMessage(ChatMessageDTO chatMessageDTO) {
         ChatMessage chatMessage = doCreateChatMessage(chatMessageDTO);
+        // 回填 id 与时间戳，供调用方（如 SSE 推送）直接使用
+        chatMessageDTO.setId(chatMessage.getId());
+        chatMessageDTO.setCreatedAt(chatMessage.getCreatedAt());
+        chatMessageDTO.setUpdatedAt(chatMessage.getUpdatedAt());
         return CreateChatMessageResponse.builder()
                 .chatMessageId(chatMessage.getId())
                 .build();

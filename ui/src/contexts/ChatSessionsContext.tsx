@@ -34,10 +34,17 @@ export function ChatSessionsProvider({ children }: { children: React.ReactNode }
     fetchChatSessions();
   }, [fetchChatSessions]);
 
-  const deleteChatSessionHandle = useCallback(async (chatSessionId: string) => {
-    await deleteChatSession(chatSessionId);
-    await fetchChatSessions();
-  }, [fetchChatSessions]);
+  const deleteChatSessionHandle = useCallback(
+    async (chatSessionId: string) => {
+      try {
+        await deleteChatSession(chatSessionId);
+      } finally {
+        // 无论删除成功与否都刷新列表（失败时 http.ts 已 toast，刷新保持状态一致）
+        await fetchChatSessions();
+      }
+    },
+    [fetchChatSessions],
+  );
 
   return (
     <ChatSessionsContext.Provider

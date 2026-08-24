@@ -4,7 +4,6 @@ import com.moondream.jchatmind.converter.ChatMessageConverter;
 import com.moondream.jchatmind.message.SseMessage;
 import com.moondream.jchatmind.model.dto.ChatMessageDTO;
 import com.moondream.jchatmind.model.dto.KnowledgeBaseDTO;
-import com.moondream.jchatmind.model.response.CreateChatMessageResponse;
 import com.moondream.jchatmind.model.vo.ChatMessageVO;
 import com.moondream.jchatmind.service.ChatMessageFacadeService;
 import com.moondream.jchatmind.service.SseService;
@@ -176,8 +175,7 @@ public class JChatMind {
                             .toolCalls(assistantMessage.getToolCalls())
                             .build())
                     .build();
-            CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
-            chatMessageDTO.setId(chatMessage.getChatMessageId());
+            chatMessageFacadeService.createChatMessage(chatMessageDTO);
             pendingChatMessages.add(chatMessageDTO);
         } else if (message instanceof ToolResponseMessage toolResponseMessage) {
             // 持久化 ToolResponseMessage
@@ -189,8 +187,7 @@ public class JChatMind {
                                 .toolResponse(toolResponse)
                                 .build())
                         .build();
-                CreateChatMessageResponse chatMessage = chatMessageFacadeService.createChatMessage(chatMessageDTO);
-                chatMessageDTO.setId(chatMessage.getChatMessageId());
+                chatMessageFacadeService.createChatMessage(chatMessageDTO);
                 pendingChatMessages.add(chatMessageDTO);
             }
         } else {
@@ -305,10 +302,60 @@ public class JChatMind {
 
     // 单个步骤模板
     private void step() {
+        sendStatus(SseMessage.Type.AI_THINKING, "AI 正在思考决策...");
         if (think()) {
+            sendStatus(SseMessage.Type.AI_EXECUTING, "AI 正在执行工具调用...");
             execute();
         } else { // 没有工具调用
             agentState = AgentState.FINISHED;
+        }
+    }
+
+    // 发送过程状态信号（AI_THINKING / AI_EXECUTING），推送是尽力而为，不得影响主流程
+    private void sendStatus(SseMessage.Type type, String statusText) {
+        try {
+            SseMessage sseMessage = SseMessage.builder()
+                    .type(type)
+                    .payload(SseMessage.Payload.builder()
+                            .statusText(statusText)
+                            .build())
+                    .build();
+            sseService.send(this.chatSessionId, sseMessage);
+        } catch (Exception e) {
+            log.warn("Failed to send Sse status message, type: {}", type, e);
+        }
+    }
+
+    // 发送终态信号（AI_DONE / AI_ERROR），推送是尽力而为，不得影响主流程
+    private void sendFinalMessage(SseMessage.Type type) {
+        try {
+            SseMessage sseMessage = SseMessage.builder()
+                    .type(type)
+                    .payload(SseMessage.Payload.builder()
+                            .statusText(type == SseMessage.Type.AI_ERROR ? "AI 处理失败" : "处理完成")
+                            .done(true)
+                            .build())
+                    .build();
+            sseService.send(this.chatSessionId, sseMessage);
+        } catch (Exception e) {
+            log.warn("Failed to send Sse final message, type: {}", type, e);
+        }
+    }
+
+    // 异常时落库一条 assistant 错误消息，让前端与历史记录都能看到失败原因
+    private void persistErrorMessage(Exception e) {
+        try {
+            String content = "AI 处理失败："
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            ChatMessageDTO errorDTO = ChatMessageDTO.builder()
+                    .role(ChatMessageDTO.RoleType.ASSISTANT)
+                    .content(content)
+                    .sessionId(this.chatSessionId)
+                    .build();
+            chatMessageFacadeService.createChatMessage(errorDTO);
+            refreshPendingMessages();
+        } catch (Exception ex) {
+            log.error("Failed to persist error message", ex);
         }
     }
 
@@ -332,8 +379,13 @@ public class JChatMind {
         } catch (Exception e) {
             agentState = AgentState.ERROR;
             log.error("Error running agent", e);
-            throw new RuntimeException("Error running agent", e);
+            // 落库错误消息并推送（前端能看到失败原因），再发送错误终态信号
+            persistErrorMessage(e);
+            sendFinalMessage(SseMessage.Type.AI_ERROR);
+            return;
         }
+        // 正常结束，发送完成终态信号
+        sendFinalMessage(SseMessage.Type.AI_DONE);
     }
 
     @Override

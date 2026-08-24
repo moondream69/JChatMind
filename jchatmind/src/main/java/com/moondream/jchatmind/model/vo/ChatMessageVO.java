@@ -4,6 +4,8 @@ import com.moondream.jchatmind.model.dto.ChatMessageDTO;
 import lombok.Builder;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Data
 @Builder
 public class ChatMessageVO {
@@ -12,4 +14,5 @@ public class ChatMessageVO {
     private ChatMessageDTO.RoleType role;
     private String content;
     private ChatMessageDTO.MetaData metadata;
+    private LocalDateTime createdAt;
 }

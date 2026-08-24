@@ -58,6 +58,7 @@ public class ChatMessageConverter {
                 .role(dto.getRole())
                 .content(dto.getContent())
                 .metadata(dto.getMetadata())
+                .createdAt(dto.getCreatedAt())
                 .build();
     }
 

@@ -30,6 +30,7 @@ export interface ChatMessageVO {
   role: MessageType;
   content: string;
   metadata?: ChatMessageVOMetadata;
+  createdAt?: string;
 }
 
 export type SseMessageType =
@@ -37,12 +38,16 @@ export type SseMessageType =
   | "AI_PLANNING"
   | "AI_THINKING"
   | "AI_EXECUTING"
-  | "AI_DONE";
+  | "AI_DONE"
+  | "AI_ERROR";
 
 export interface SseMessagePayload {
-  message: ChatMessageVO;
-  statusText: string;
-  done: boolean;
+  /** 仅 AI_GENERATED_CONTENT 带 */
+  message?: ChatMessageVO;
+  /** 状态/终态事件带 */
+  statusText?: string;
+  /** 终态事件带 */
+  done?: boolean;
 }
 
 export interface SseMessageMetadata {

@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Divider, Popconfirm } from "antd";
 import {
   PlusOutlined,
@@ -8,9 +8,11 @@ import {
 } from "@ant-design/icons";
 import { useChatSessions } from "../../hooks/useChatSessions.ts";
 import { useAgents } from "../../hooks/useAgents.ts";
+import { getAgentEmoji } from "../../utils";
 
 const ChatTabContent: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { chatSessions, loading, deleteChatSession } = useChatSessions();
   const { agents } = useAgents();
 
@@ -32,7 +34,16 @@ const ChatTabContent: React.FC = () => {
   };
 
   const handleDeleteChatSession = async (chatSessionId: string) => {
-    await deleteChatSession(chatSessionId);
+    try {
+      await deleteChatSession(chatSessionId);
+    } catch {
+      // 删除失败提示已由 http.ts 统一处理，保持当前页面不动
+      return;
+    }
+    // 删除的是当前正在查看的会话时，回到新聊天空态（组件卸载自动关闭 SSE）
+    if (location.pathname === `/chat/${chatSessionId}`) {
+      navigate("/chat");
+    }
   };
 
   // 格式化标题显示
@@ -69,42 +80,54 @@ const ChatTabContent: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-1.5 p-1.5">
-            {chatSessions.map((session) => (
-              <div
-                key={session.id}
-                onClick={() => handleSelectChatSession(session.id)}
-                className="w-full px-3 py-2.5 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
-                    <MessageOutlined />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 truncate">
-                      {getDisplayTitle(session)}
+            {chatSessions.map((session) => {
+              const isCurrent =
+                location.pathname === `/chat/${session.id}`;
+              return (
+                <div
+                  key={session.id}
+                  onClick={() => handleSelectChatSession(session.id)}
+                  className={`w-full px-3 py-2.5 rounded-lg cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative ${
+                    isCurrent ? "bg-blue-50 border border-blue-200" : "bg-white"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-200 to-purple-200 flex items-center justify-center shrink-0 text-lg mt-0.5">
+                      {getAgentEmoji(session.agentId)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className={`truncate ${
+                          isCurrent
+                            ? "font-medium text-blue-600"
+                            : "font-medium text-gray-900"
+                        }`}
+                      >
+                        {getDisplayTitle(session)}
+                      </div>
+                    </div>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Popconfirm
+                        title="确定要删除这条聊天记录吗？"
+                        description="删除后将无法恢复"
+                        onConfirm={() => handleDeleteChatSession(session.id)}
+                        okText="确定"
+                        cancelText="取消"
+                      >
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                          danger
+                        />
+                      </Popconfirm>
                     </div>
                   </div>
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <Popconfirm
-                      title="确定要删除这条聊天记录吗？"
-                      description="删除后将无法恢复"
-                      onConfirm={() => handleDeleteChatSession(session.id)}
-                      okText="确定"
-                      cancelText="取消"
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                        danger
-                      />
-                    </Popconfirm>
-                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

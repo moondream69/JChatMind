@@ -15,6 +15,9 @@ export interface RequestOptions extends RequestInit {
 // API 基础路径（可以根据环境变量配置）
 export const BASE_URL = "http://localhost:8080/api";
 
+// SSE 基础路径（后端 SSE 端点不在 /api 前缀下）
+export const SSE_BASE_URL = "http://localhost:8080/sse";
+
 /**
  * 构建完整的 URL（包含查询参数）
  */
@@ -83,8 +86,16 @@ async function request<T = unknown>(
     const apiResponse = await handleResponse<T>(response);
     return apiResponse.data;
   } catch (error) {
-    // 统一错误处理
+    // 统一错误处理：
+    // - 业务错误（code !== 200）已在 handleResponse 中 toast，这里透传即可；
+    // - HTTP 状态错误 / 网络层错误这里兜底 toast，避免调用方重复弹。
     if (error instanceof Error) {
+      if (
+        error.message.startsWith("HTTP error!") ||
+        error.message === "Failed to fetch"
+      ) {
+        message.error("网络请求失败，请检查服务是否可用");
+      }
       throw error;
     }
     throw new Error("网络请求失败");

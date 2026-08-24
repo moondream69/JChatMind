@@ -13,7 +13,6 @@ import { formatDateTime, getAgentEmoji } from "../../utils";
 interface AgentTabContentProps {
   agents: AgentVO[];
   onCreateAgentClick: () => void;
-  onSelectAgent: (agentId: string) => void;
   onEditAgent?: (agent: AgentVO) => void;
   onDeleteAgent?: (agentId: string) => void;
 }
@@ -21,7 +20,6 @@ interface AgentTabContentProps {
 const AgentTabContent: React.FC<AgentTabContentProps> = ({
   agents,
   onCreateAgentClick,
-  onSelectAgent,
   onEditAgent,
   onDeleteAgent,
 }) => {
@@ -100,7 +98,6 @@ const AgentTabContent: React.FC<AgentTabContentProps> = ({
               return (
                 <div
                   key={agent.id}
-                  onClick={() => onSelectAgent(agent.id)}
                   className="w-full px-3 py-3 rounded-lg bg-white cursor-pointer transition-all hover:bg-gray-100 hover:shadow-sm group relative"
                 >
                   <div className="flex items-start gap-3">

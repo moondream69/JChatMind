@@ -5,13 +5,19 @@ import {
   ToolOutlined,
   CheckCircleOutlined,
   RobotOutlined,
+  UserOutlined,
   DownOutlined,
   RightOutlined,
 } from "@ant-design/icons";
+import { formatDateTime } from "../../../utils";
 import type { ChatMessageVO, SseMessageType, ToolCall, ToolResponse } from "../../../types";
 
 interface AgentChatHistoryProps {
   messages: ChatMessageVO[];
+  /** 当前会话智能体的 emoji 头像，透传给气泡 */
+  agentEmoji?: string;
+  /** 当前会话智能体名称，用于气泡角色标签 */
+  agentName?: string;
   displayAgentStatus?: boolean;
   agentStatusText?: string;
   agentStatusType?: SseMessageType;
@@ -103,6 +109,8 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
 
 const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
   messages,
+  agentEmoji,
+  agentName,
   displayAgentStatus = false,
   agentStatusText = "",
   agentStatusType,
@@ -206,6 +214,14 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
             {/* Assistant 消息 */}
             {message.role === "assistant" && (
               <Bubble
+                avatar={
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center text-lg shrink-0">
+                    {agentEmoji ?? <RobotOutlined className="text-blue-500" />}
+                  </div>
+                }
+                header={
+                  `${agentName ?? "AI 助手"} · ${formatDateTime(message.createdAt)}`
+                }
                 content={
                   <div className="w-full">
                     {/* 工具调用展示 */}
@@ -244,7 +260,16 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
 
             {/* User 消息 */}
             {message.role === "user" && (
-              <Bubble content={message.content} placement="end" />
+              <Bubble
+                avatar={
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center text-base shrink-0">
+                    <UserOutlined className="text-white" />
+                  </div>
+                }
+                header={`我 · ${formatDateTime(message.createdAt)}`}
+                content={message.content}
+                placement="end"
+              />
             )}
 
             {/* System 消息 */}

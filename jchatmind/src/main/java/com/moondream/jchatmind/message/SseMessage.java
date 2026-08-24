@@ -36,11 +36,13 @@ public class SseMessage {
     // 3. AI 思考中
     // 4. AI 执行中
     // 5. AI 完成
+    // 6. AI 出错
     public enum Type {
         AI_GENERATED_CONTENT,
         AI_PLANNING,
         AI_THINKING,
         AI_EXECUTING,
         AI_DONE,
+        AI_ERROR,
     }
 }
