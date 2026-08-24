@@ -18,7 +18,7 @@
 - **RAG 知识库**：Markdown 解析分块 → bge-m3 嵌入（1024 维）→ pgvector 相似度检索（L2 距离，ivfflat 索引，Top-K=3）。
 - **多模型架构**：ChatClientRegistry 注册表模式管理模型实例，DeepSeek / 智谱 GLM 可切换，扩展新模型零侵入。
 - **SSE 实时通信**：思考 / 执行 / 完成状态实时推送，执行过程可视化。
-- **对话记忆持久化**：所有消息落库，下次提问自动恢复上下文，支持断点续聊。
+- **对话记忆持久化**：所有消息落库，下次提问自动恢复上下文，支持断点续聊（按 Agent 配置的**消息窗口长度** `chat_options.messageLength` 恢复**最近 N 条**，早期消息自动移出记忆）。
 - **多 Agent 管理**：每个 Agent 独立配置系统提示词、模型、可用工具与可用知识库（JSONB 存储）。
 
 ## 技术栈
@@ -32,7 +32,7 @@
 | 文档解析 | flexmark（Markdown） |
 | 消息推送 | SSE（SseEmitter） |
 | 其他 | Spring Mail（邮件工具）、Lombok |
-| 前端 | React 19、TypeScript、Ant Design 6（ant-design/x）、Vite、Tailwind CSS 4 |
+| 前端 | React 19、TypeScript、Ant Design 6（≥ 6.6.1，使用 ant-design/x）、Vite、Tailwind CSS 4 |
 
 ## 架构设计
 
@@ -261,7 +261,7 @@ Agent 的 `allowed_tools`（JSONB）决定挂载哪些可选工具。
 | 表 | 说明 |
 | --- | --- |
 | `agent` | Agent 定义：系统提示词、模型、`allowed_tools` / `allowed_kbs` / `chat_options`（JSONB） |
-| `chat_session` | 会话（绑定 Agent，自动生成标题） |
+| `chat_session` | 会话（绑定 Agent，标题由前端创建时按首条消息生成） |
 | `chat_message` | 消息（`user` / `assistant` / `tool` 角色，metadata JSONB 存工具调用与返回） |
 | `knowledge_base` | 知识库 |
 | `document` | 知识库下的文档（md/pdf/txt，记录大小与元数据） |
@@ -287,7 +287,7 @@ Agent 的 `allowed_tools`（JSONB）决定挂载哪些可选工具。
 | GET | `/api/tools` | 可选工具列表 |
 | GET | `/sse/connect/{chatSessionId}` | SSE 长连接（30 分钟超时，实时推送状态与产出） |
 
-SSE 消息类型：`AI_GENERATED_CONTENT`（正式产出）、`AI_PLANNING` / `AI_THINKING` / `AI_EXECUTING`（过程状态）、`AI_DONE`（结束）。
+SSE 消息类型：`AI_GENERATED_CONTENT`（正式产出）、`AI_PLANNING` / `AI_THINKING` / `AI_EXECUTING`（过程状态）、`AI_DONE`（正常结束）、`AI_ERROR`（异常终态，配合错误消息落库，前端可见失败原因）。
 
 ## 演示
 
