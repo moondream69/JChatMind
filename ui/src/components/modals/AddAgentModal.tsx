@@ -32,6 +32,63 @@ const menuItems = [
   // { key: "memory", label: "全局记忆" },
 ];
 
+/**
+ * 受控滑块字段：拖动期间值只保存在子组件局部 state（避免高频 setState 冲刷整棵 Modal 树，
+ * 触发 antd 组件 setState 循环导致 "Maximum update depth exceeded"），拖动结束才一次性提交。
+ */
+interface SliderFieldProps {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  /** 静止时显示值（来自 formData，随编辑对象初始化/提交自动同步） */
+  display: number;
+  format?: (value: number) => string;
+  onCommit: (value: number) => void;
+}
+
+const SliderField: React.FC<SliderFieldProps> = ({
+  label,
+  min,
+  max,
+  step,
+  display,
+  format,
+  onCommit,
+}) => {
+  // 完全受控：拖动中显示值走局部 state（拖动结束即清除），
+  // 静止时始终跟随 formData —— 手柄与数字永远一致。
+  const [draggingValue, setDraggingValue] = useState<number | null>(null);
+  const shownValue = draggingValue ?? display;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="block text-sm text-gray-600">
+          {label}
+          <span className="text-gray-400 ml-1 text-xs">
+            ({min} - {max})
+          </span>
+        </label>
+        <span className="text-sm font-medium text-gray-700 min-w-[40px] text-right">
+          {format ? format(shownValue) : shownValue}
+        </span>
+      </div>
+      <Slider
+        min={min}
+        max={max}
+        step={step}
+        value={shownValue}
+        onChange={(v) => setDraggingValue(Number(v))}
+        onChangeComplete={(v) => {
+          setDraggingValue(null);
+          onCommit(Number(v));
+        }}
+      />
+    </div>
+  );
+};
+
 const AddAgentModal: React.FC<AddAgentModalProps> = ({
   open,
   onClose,
@@ -123,6 +180,8 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
       footer={null}
       width={800}
       centered
+      maskClosable={false}
+      destroyOnClose
     >
       <div className="flex h-[500px]">
         <div className="w-[150px] h-full border-r border-gray-200 pr-2">
@@ -218,90 +277,60 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                     模型参数
                   </label>
                   <div className="space-y-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm text-gray-600">
-                          Temperature（温度）
-                          <span className="text-gray-400 ml-1 text-xs">
-                            (0.0 - 2.0)
-                          </span>
-                        </label>
-                        <span className="text-sm font-medium text-gray-700 min-w-[40px] text-right">
-                          {formData?.chatOptions?.temperature?.toFixed(1)}
-                        </span>
-                      </div>
-                      <Slider
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={formData?.chatOptions?.temperature}
-                        onChange={(value) =>
-                          setFormData({
-                            ...formData,
-                            chatOptions: {
-                              ...formData.chatOptions,
-                              temperature: value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm text-gray-600">
-                          Top P（核采样）
-                          <span className="text-gray-400 ml-1 text-xs">
-                            (0.0 - 1.0)
-                          </span>
-                        </label>
-                        <span className="text-sm font-medium text-gray-700 min-w-[40px] text-right">
-                          {formData?.chatOptions?.topP?.toFixed(1)}
-                        </span>
-                      </div>
-                      <Slider
-                        min={0}
-                        max={1}
-                        step={0.1}
-                        value={formData?.chatOptions?.topP}
-                        onChange={(value) =>
-                          setFormData({
-                            ...formData,
-                            chatOptions: {
-                              ...formData.chatOptions,
-                              topP: value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm text-gray-600">
-                          消息窗口长度
-                          <span className="text-gray-400 ml-1 text-xs">
-                            (1 - 100)
-                          </span>
-                        </label>
-                        <span className="text-sm font-medium text-gray-700 min-w-[40px] text-right">
-                          {formData?.chatOptions?.messageLength}
-                        </span>
-                      </div>
-                      <Slider
-                        min={1}
-                        max={100}
-                        step={1}
-                        value={formData?.chatOptions?.messageLength}
-                        onChange={(value) =>
-                          setFormData({
-                            ...formData,
-                            chatOptions: {
-                              ...formData.chatOptions,
-                              messageLength: value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
+                    <SliderField
+                      key={`temp-${editingAgent?.id ?? "new"}-${open}`}
+                      label="Temperature（温度）"
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      display={formData?.chatOptions?.temperature ?? 0.7}
+                      format={(value) => value.toFixed(1)}
+                      onCommit={(value) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          chatOptions: {
+                            ...prev.chatOptions,
+                            temperature: value,
+                          },
+                        }))
+                      }
+                    />
+                    <SliderField
+                      key={`topp-${editingAgent?.id ?? "new"}-${open}`}
+                      label="Top P（核采样）"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      display={formData?.chatOptions?.topP ?? 1.0}
+                      format={(value) => value.toFixed(1)}
+                      onCommit={(value) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          chatOptions: {
+                            ...prev.chatOptions,
+                            topP: value,
+                          },
+                        }))
+                      }
+                    />
+                    <SliderField
+                      key={`msglen-${editingAgent?.id ?? "new"}-${open}`}
+                      label="消息窗口长度"
+                      min={1}
+                      max={100}
+                      step={1}
+                      display={formData?.chatOptions?.messageLength ?? 10}
+                      format={(value) => String(Math.round(value))}
+                      onCommit={(value) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          chatOptions: {
+                            ...prev.chatOptions,
+                            messageLength: Math.round(value),
+                          },
+                        }))
+                      }
+                    />
                   </div>
                 </div>
               </div>
