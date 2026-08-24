@@ -134,7 +134,7 @@ sequenceDiagram
 
 - `think()` 将系统提示词 + 决策模块提示（告知 Agent 拥有哪些知识库、缺上下文优先检索）与完整记忆一并交给大模型，由模型决定下一步动作（`JChatMind.java`）；
 - `execute()` 通过 `ToolCallingManager` **手动执行**工具（Spring AI 内部自动执行已被关闭），工具调用与返回均持久化为 `assistant` / `tool` 角色消息，并实时推送前端；
-- 模型可通过内置 `terminate` 工具主动宣告任务结束；任一环节异常 → 状态置 `ERROR`，不会挂死。
+- 模型可通过内置 `terminate` 工具主动宣告任务结束；任一环节异常 → 状态置 `ERROR`，异常会落库一条错误消息并通过 SSE 推送 `AI_ERROR`，前端可看到明确的失败原因。
 
 ## 快速开始
 
@@ -167,7 +167,7 @@ cd jchatmind
 cp .env.example .env   # 填入自己的 DeepSeek / 智谱 API Key、邮箱授权码、数据库密码
 ```
 
-`.env` 已被 `.gitignore` 忽略，密钥不会进入版本库；后端通过 `spring.config.import: optional:file:.env[.properties]` 加载，文件缺失时数据库配置回退默认值，API Key 缺失则启动失败（宁可失败也不静默运行）。
+`.env` 已被 `.gitignore` 忽略，密钥不会进入版本库；后端通过 `spring.config.import` 的两条 optional 路径加载（`.env` 与 `./jchatmind/.env`，分别命中「从 `jchatmind/` 目录启动」与「从仓库根启动（如 IDEA）」两种方式），文件缺失时数据库配置回退默认值，API Key 缺失则启动失败（宁可失败也不静默运行）。
 
 ### 3. 启动后端
 

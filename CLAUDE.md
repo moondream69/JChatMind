@@ -12,6 +12,7 @@ JChatMind 是一个基于 Spring AI 的 Java Agent 系统：Think-Execute 循环
 - PostgreSQL + pgvector：默认连接 `localhost:5432/jchatmind`，账号 `root` / 密码 `123456`（仅本地开发）。
 - Ollama 本地嵌入服务（`localhost:11434`，需 `ollama pull bge-m3`）——RAG 功能依赖它，Embedding 调用是同步阻塞的（`WebClient.block()`）。
 - 模型 API Key 缺失时应用启动会失败——这是设计行为（宁可失败也不无 key 静默运行）。
+- 前端依赖 `antd >= 6.6.1`：6.0.x 的 rc-slider 在 React 19 下高频拖动会触发 `Maximum update depth exceeded`（滑块崩溃），已升级修复——**不要降级**。
 
 ## 常用命令
 
@@ -67,7 +68,7 @@ npm run lint                   # eslint
 
 ### SSE
 
-`SseServiceImpl`：`ConcurrentHashMap<chatSessionId, SseEmitter>` 管理连接（30 分钟超时，onCompletion/onTimeout/onError 清理）。`SseMessage` 5 种类型：`AI_GENERATED_CONTENT` / `AI_PLANNING` / `AI_THINKING` / `AI_EXECUTING` / `AI_DONE`。前端 `AgentChatView.tsx` 用 EventSource 订阅，按类型渲染。单会话单连接——同一会话并发消息会互相覆盖连接。
+`SseServiceImpl`：`ConcurrentHashMap<chatSessionId, SseEmitter>` 管理连接（30 分钟超时，onCompletion/onTimeout/onError 清理）。`SseMessage` 6 种类型：`AI_GENERATED_CONTENT` / `AI_PLANNING` / `AI_THINKING` / `AI_EXECUTING` / `AI_DONE` / `AI_ERROR`。前端在 `ui/src/hooks/useChatSse.ts` 统一订阅（EventSource），`AgentChatView.tsx` 通过该 hook 接收并按类型渲染。Agent 正常结束发 `AI_DONE`，异常时落库一条错误消息并继续发 `AI_ERROR` 终态（`JChatMind.run()` 的 catch 分支）；状态推送（THINKING/EXECUTING）由 step() 每轮发射。单会话单连接——同一会话并发消息会互相覆盖连接。
 
 ## 配置体系
 
@@ -77,4 +78,4 @@ npm run lint                   # eslint
 
 ## 分层约定
 
-controller（薄）→ service（Facade 门面，接口在 `service/`、实现在 `service/impl/`）→ mapper（XML 在 `resources/mapper/`）。模型四件套：`entity`（DB 映射）/ `dto`（含 metadata 的完整模型）/ `vo`（前端视图）/ `request`、`response`（API 契约）。converter 负责 DTO↔VO 转换。统一响应 `ApiResponse{code, message, data}`，业务异常抛 `BizException` 由 `GlobalExceptionHandler` 兜底。**前后端契约**：`ui/src/api/http.ts` 硬编码 `BASE_URL = http://localhost:8080/api`，SSE 地址同样硬编码在 `AgentChatView.tsx`。
+controller（薄）→ service（Facade 门面，接口在 `service/`、实现在 `service/impl/`）→ mapper（XML 在 `resources/mapper/`）。模型四件套：`entity`（DB 映射）/ `dto`（含 metadata 的完整模型）/ `vo`（前端视图）/ `request`、`response`（API 契约）。converter 负责 DTO↔VO 转换。统一响应 `ApiResponse{code, message, data}`，业务异常抛 `BizException` 由 `GlobalExceptionHandler` 兜底。**前后端契约**：`ui/src/api/http.ts` 硬编码 `BASE_URL = http://localhost:8080/api`，SSE 地址 `SSE_BASE_URL` 同样定义在 `http.ts`（前缀 `/sse`，不含 `/api`）。
