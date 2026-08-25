@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Input, Modal, Select, Slider } from "antd";
 import TextArea from "antd/es/input/TextArea";
 import { SaveOutlined } from "@ant-design/icons";
@@ -56,10 +56,12 @@ const SliderField: React.FC<SliderFieldProps> = ({
   format,
   onCommit,
 }) => {
-  // 完全受控：拖动中显示值走局部 state（拖动结束即清除），
-  // 静止时始终跟随 formData —— 手柄与数字永远一致。
-  const [draggingValue, setDraggingValue] = useState<number | null>(null);
-  const shownValue = draggingValue ?? display;
+  // 限制边界：滑块必须非受控。拖动期间不触发任何 React setState——
+  // 高频 setState 让 Modal 树（Portal 内）每帧重建，叠加 @rc-component/portal
+  // 每个渲染周期强制执行 setState 的 effect（Portal.js:55 无依赖数组的
+  // setInnerContainer），嵌套层数瞬间破 50 触发 "Maximum update depth exceeded"。
+  // 拖动中的数字实时反馈由原生 DOM 直写（valueRef），不经过 React 渲染。
+  const valueRef = useRef<HTMLSpanElement>(null);
 
   return (
     <div>
@@ -70,18 +72,31 @@ const SliderField: React.FC<SliderFieldProps> = ({
             ({min} - {max})
           </span>
         </label>
-        <span className="text-sm font-medium text-gray-700 min-w-[40px] text-right">
-          {format ? format(shownValue) : shownValue}
+        <span
+          ref={valueRef}
+          className="text-sm font-medium text-gray-700 min-w-[40px] text-right"
+        >
+          {format ? format(display) : display}
         </span>
       </div>
       <Slider
         min={min}
         max={max}
         step={step}
-        value={shownValue}
-        onChange={(v) => setDraggingValue(Number(v))}
+        defaultValue={display}
+        // 关闭 Tooltip：拖动时 @rc-component/trigger 的 useAlign 依赖 mousePos 高频
+        // 变化触发 useLayoutEffect(triggerAlign) → Promise.then(onAlign → setOffsetInfo)
+        // 在 React 19 布局 commit 中同步 setState，嵌套循环破 50 导致
+        // "Maximum update depth exceeded"。数值反馈由旁边 DOM 直写的数字承担。
+        tooltip={{ open: false }}
+        onChange={(v) => {
+          if (valueRef.current) {
+            valueRef.current.textContent = format
+              ? format(Number(v))
+              : String(v);
+          }
+        }}
         onChangeComplete={(v) => {
-          setDraggingValue(null);
           onCommit(Number(v));
         }}
       />
@@ -180,8 +195,8 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
       footer={null}
       width={800}
       centered
-      maskClosable={false}
-      destroyOnClose
+      mask={{ closable: false }}
+      destroyOnHidden
     >
       <div className="flex h-[500px]">
         <div className="w-[150px] h-full border-r border-gray-200 pr-2">
