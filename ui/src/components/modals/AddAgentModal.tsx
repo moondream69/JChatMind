@@ -7,6 +7,7 @@ import {
   type UpdateAgentRequest,
   type AgentVO,
   type ModelType,
+  type ChatOptions,
   getOptionalTools,
   type ToolVO,
 } from "../../api/api.ts";
@@ -32,12 +33,17 @@ const menuItems = [
   // { key: "memory", label: "全局记忆" },
 ];
 
+const DEFAULT_CHAT_OPTIONS: ChatOptions = {
+  temperature: 0.7,
+  topP: 1.0,
+  messageLength: 10,
+};
+
 /**
- * 受限滑块（非受控）：拖动期间不触发任何 React setState——高频 setState 会让 Modal 树
- * 每帧重建，叠加 @rc-component/portal 每个渲染周期强制 setState 的 effect 与
- * @rc-component/trigger 的 mousePos 对齐循环，嵌套破 50 触发 "Maximum update depth exceeded"
- * （React 19）。因此拖动中数字反馈经 valueRef 原生 DOM 直写，不经过 React 渲染；
- * defaultValue 只在挂载时生效，值变化依赖外层 key（含 chatOptions 指纹）强制重挂载刷新。
+ * 受限滑块（非受控）：拖动期间不触发任何 React setState——高频 setState 会与
+ * antd Portal/Trigger 底库的渲染循环耦合，触发 "Maximum update depth exceeded"。
+ * defaultValue 只在挂载时生效，值变化依赖外层 key（绑定显示值）强制重挂载刷新；
+ * 拖动中数字反馈经 valueRef 原生 DOM 直写，不经过 React 渲染。
  */
 interface SliderFieldProps {
   label: string;
@@ -62,8 +68,6 @@ const SliderField: React.FC<SliderFieldProps> = ({
   onCommit,
 }) => {
   const valueRef = useRef<HTMLSpanElement>(null);
-  // 缓存上次直写文本：相同值帧跳过重复 DOM 写
-  const lastTextRef = useRef<string | null>(null);
   const renderValue = (value: number) =>
     format ? format(value) : String(value);
 
@@ -95,12 +99,8 @@ const SliderField: React.FC<SliderFieldProps> = ({
         // "Maximum update depth exceeded"。数值反馈由旁边 DOM 直写的数字承担。
         tooltip={{ open: false }}
         onChange={(v) => {
-          const text = renderValue(v);
-          if (lastTextRef.current !== text) {
-            lastTextRef.current = text;
-            if (valueRef.current) {
-              valueRef.current.textContent = text;
-            }
+          if (valueRef.current) {
+            valueRef.current.textContent = renderValue(v);
           }
         }}
         onChangeComplete={(v) => {
@@ -136,11 +136,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
     model: "deepseek-v4-flash",
     allowedTools: [],
     allowedKbs: [],
-    chatOptions: {
-      temperature: 0.7,
-      topP: 1.0,
-      messageLength: 20,
-    },
+    chatOptions: { ...DEFAULT_CHAT_OPTIONS },
   });
 
   const [createAgentLoading, setCreateAgentLoading] = useState(false);
@@ -155,11 +151,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
         model: editingAgent.model,
         allowedTools: editingAgent.allowedTools || [],
         allowedKbs: editingAgent.allowedKbs || [],
-        chatOptions: editingAgent.chatOptions || {
-          temperature: 0.7,
-          topP: 1.0,
-          messageLength: 10,
-        },
+        chatOptions: editingAgent.chatOptions || { ...DEFAULT_CHAT_OPTIONS },
       });
     } else {
       // 重置表单
@@ -170,11 +162,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
         model: "deepseek-v4-flash",
         allowedTools: [],
         allowedKbs: [],
-        chatOptions: {
-          temperature: 0.7,
-          topP: 1.0,
-          messageLength: 10,
-        },
+        chatOptions: { ...DEFAULT_CHAT_OPTIONS },
       });
     }
   }, [editingAgent, open]);
@@ -195,14 +183,12 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
 
   const isEditMode = !!editingAgent;
 
-  // chatOptions 指纹：打开/取消重开时 effect 回填 formData 后 key 变化，
-  // 强制非受控滑块重挂载，让 defaultValue 取到同步后的值（避免手柄停在陈旧值）。
-  const chatOptionsFingerprint = `${formData.chatOptions?.temperature}-${formData.chatOptions?.topP}-${formData.chatOptions?.messageLength}`;
+  const chatOptions = formData.chatOptions;
+  const tempDisplay = chatOptions?.temperature ?? 0.7;
+  const topPDisplay = chatOptions?.topP ?? 1.0;
+  const msglenDisplay = chatOptions?.messageLength ?? 10;
 
-  const updateChatOptions = (
-    key: "temperature" | "topP" | "messageLength",
-    value: number,
-  ) =>
+  const updateChatOptions = (key: keyof ChatOptions, value: number) =>
     setFormData((prev) => ({
       ...prev,
       chatOptions: { ...prev.chatOptions, [key]: value },
@@ -314,34 +300,34 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                   </label>
                   <div className="space-y-4">
                     <SliderField
-                      key={`temp-${editingAgent?.id ?? "new"}-${open}-${chatOptionsFingerprint}`}
+                      key={`temp-${tempDisplay}`}
                       label="Temperature（温度）"
                       min={0}
                       max={2}
                       step={0.1}
-                      display={formData?.chatOptions?.temperature ?? 0.7}
+                      display={tempDisplay}
                       format={(value) => value.toFixed(1)}
                       onCommit={(value) =>
                         updateChatOptions("temperature", value)
                       }
                     />
                     <SliderField
-                      key={`topp-${editingAgent?.id ?? "new"}-${open}-${chatOptionsFingerprint}`}
+                      key={`topp-${topPDisplay}`}
                       label="Top P（核采样）"
                       min={0}
                       max={1}
                       step={0.1}
-                      display={formData?.chatOptions?.topP ?? 1.0}
+                      display={topPDisplay}
                       format={(value) => value.toFixed(1)}
                       onCommit={(value) => updateChatOptions("topP", value)}
                     />
                     <SliderField
-                      key={`msglen-${editingAgent?.id ?? "new"}-${open}-${chatOptionsFingerprint}`}
+                      key={`msglen-${msglenDisplay}`}
                       label="消息窗口长度"
                       min={1}
                       max={100}
                       step={1}
-                      display={formData?.chatOptions?.messageLength ?? 10}
+                      display={msglenDisplay}
                       format={(value) => String(Math.round(value))}
                       onCommit={(value) =>
                         updateChatOptions("messageLength", Math.round(value))
