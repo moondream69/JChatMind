@@ -33,8 +33,11 @@ const menuItems = [
 ];
 
 /**
- * 受控滑块字段：拖动期间值只保存在子组件局部 state（避免高频 setState 冲刷整棵 Modal 树，
- * 触发 antd 组件 setState 循环导致 "Maximum update depth exceeded"），拖动结束才一次性提交。
+ * 受限滑块（非受控）：拖动期间不触发任何 React setState——高频 setState 会让 Modal 树
+ * 每帧重建，叠加 @rc-component/portal 每个渲染周期强制 setState 的 effect 与
+ * @rc-component/trigger 的 mousePos 对齐循环，嵌套破 50 触发 "Maximum update depth exceeded"
+ * （React 19）。因此拖动中数字反馈经 valueRef 原生 DOM 直写，不经过 React 渲染；
+ * defaultValue 只在挂载时生效，值变化依赖外层 key（含 chatOptions 指纹）强制重挂载刷新。
  */
 interface SliderFieldProps {
   label: string;
@@ -44,6 +47,7 @@ interface SliderFieldProps {
   /** 静止时显示值（来自 formData，随编辑对象初始化/提交自动同步） */
   display: number;
   format?: (value: number) => string;
+  disabled?: boolean;
   onCommit: (value: number) => void;
 }
 
@@ -54,14 +58,14 @@ const SliderField: React.FC<SliderFieldProps> = ({
   step,
   display,
   format,
+  disabled,
   onCommit,
 }) => {
-  // 限制边界：滑块必须非受控。拖动期间不触发任何 React setState——
-  // 高频 setState 让 Modal 树（Portal 内）每帧重建，叠加 @rc-component/portal
-  // 每个渲染周期强制执行 setState 的 effect（Portal.js:55 无依赖数组的
-  // setInnerContainer），嵌套层数瞬间破 50 触发 "Maximum update depth exceeded"。
-  // 拖动中的数字实时反馈由原生 DOM 直写（valueRef），不经过 React 渲染。
   const valueRef = useRef<HTMLSpanElement>(null);
+  // 缓存上次直写文本：相同值帧跳过重复 DOM 写
+  const lastTextRef = useRef<string | null>(null);
+  const renderValue = (value: number) =>
+    format ? format(value) : String(value);
 
   return (
     <div>
@@ -76,7 +80,7 @@ const SliderField: React.FC<SliderFieldProps> = ({
           ref={valueRef}
           className="text-sm font-medium text-gray-700 min-w-[40px] text-right"
         >
-          {format ? format(display) : display}
+          {renderValue(display)}
         </span>
       </div>
       <Slider
@@ -84,20 +88,24 @@ const SliderField: React.FC<SliderFieldProps> = ({
         max={max}
         step={step}
         defaultValue={display}
+        disabled={disabled}
         // 关闭 Tooltip：拖动时 @rc-component/trigger 的 useAlign 依赖 mousePos 高频
         // 变化触发 useLayoutEffect(triggerAlign) → Promise.then(onAlign → setOffsetInfo)
         // 在 React 19 布局 commit 中同步 setState，嵌套循环破 50 导致
         // "Maximum update depth exceeded"。数值反馈由旁边 DOM 直写的数字承担。
         tooltip={{ open: false }}
         onChange={(v) => {
-          if (valueRef.current) {
-            valueRef.current.textContent = format
-              ? format(Number(v))
-              : String(v);
+          const text = renderValue(v);
+          if (lastTextRef.current !== text) {
+            lastTextRef.current = text;
+            if (valueRef.current) {
+              valueRef.current.textContent = text;
+            }
           }
         }}
         onChangeComplete={(v) => {
-          onCommit(Number(v));
+          // 值未变（拖回原点/原地点击）时跳过空转提交
+          if (v !== display) onCommit(v);
         }}
       />
     </div>
@@ -186,6 +194,19 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
   }, []);
 
   const isEditMode = !!editingAgent;
+
+  // chatOptions 指纹：打开/取消重开时 effect 回填 formData 后 key 变化，
+  // 强制非受控滑块重挂载，让 defaultValue 取到同步后的值（避免手柄停在陈旧值）。
+  const chatOptionsFingerprint = `${formData.chatOptions?.temperature}-${formData.chatOptions?.topP}-${formData.chatOptions?.messageLength}`;
+
+  const updateChatOptions = (
+    key: "temperature" | "topP" | "messageLength",
+    value: number,
+  ) =>
+    setFormData((prev) => ({
+      ...prev,
+      chatOptions: { ...prev.chatOptions, [key]: value },
+    }));
 
   return (
     <Modal
@@ -293,7 +314,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                   </label>
                   <div className="space-y-4">
                     <SliderField
-                      key={`temp-${editingAgent?.id ?? "new"}-${open}`}
+                      key={`temp-${editingAgent?.id ?? "new"}-${open}-${chatOptionsFingerprint}`}
                       label="Temperature（温度）"
                       min={0}
                       max={2}
@@ -301,35 +322,21 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                       display={formData?.chatOptions?.temperature ?? 0.7}
                       format={(value) => value.toFixed(1)}
                       onCommit={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          chatOptions: {
-                            ...prev.chatOptions,
-                            temperature: value,
-                          },
-                        }))
+                        updateChatOptions("temperature", value)
                       }
                     />
                     <SliderField
-                      key={`topp-${editingAgent?.id ?? "new"}-${open}`}
+                      key={`topp-${editingAgent?.id ?? "new"}-${open}-${chatOptionsFingerprint}`}
                       label="Top P（核采样）"
                       min={0}
                       max={1}
                       step={0.1}
                       display={formData?.chatOptions?.topP ?? 1.0}
                       format={(value) => value.toFixed(1)}
-                      onCommit={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          chatOptions: {
-                            ...prev.chatOptions,
-                            topP: value,
-                          },
-                        }))
-                      }
+                      onCommit={(value) => updateChatOptions("topP", value)}
                     />
                     <SliderField
-                      key={`msglen-${editingAgent?.id ?? "new"}-${open}`}
+                      key={`msglen-${editingAgent?.id ?? "new"}-${open}-${chatOptionsFingerprint}`}
                       label="消息窗口长度"
                       min={1}
                       max={100}
@@ -337,13 +344,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                       display={formData?.chatOptions?.messageLength ?? 10}
                       format={(value) => String(Math.round(value))}
                       onCommit={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          chatOptions: {
-                            ...prev.chatOptions,
-                            messageLength: Math.round(value),
-                          },
-                        }))
+                        updateChatOptions("messageLength", Math.round(value))
                       }
                     />
                   </div>
@@ -549,6 +550,8 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({
                     await createAgentHandle(formData);
                   }
                   onClose();
+                } catch {
+                  // http/api 层已统一 toast（业务错误与网络失败），此处仅阻止 unhandled rejection
                 } finally {
                   setCreateAgentLoading(false);
                 }
