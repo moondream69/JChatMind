@@ -10,6 +10,7 @@ import com.moondream.jchatmind.mapper.AgentMapper;
 import com.moondream.jchatmind.mapper.KnowledgeBaseMapper;
 import com.moondream.jchatmind.model.dto.AgentDTO;
 import com.moondream.jchatmind.model.dto.ChatMessageDTO;
+import com.moondream.jchatmind.model.dto.ChatMessageDTO.RoleType;
 import com.moondream.jchatmind.model.dto.KnowledgeBaseDTO;
 import com.moondream.jchatmind.model.entity.Agent;
 import com.moondream.jchatmind.model.entity.KnowledgeBase;
@@ -78,9 +79,11 @@ public class JChatMindFactory {
      */
     private List<Message> loadMemory(String chatSessionId) {
         int messageLength = agentConfig.getChatOptions().getMessageLength();
-        List<ChatMessageDTO> chatMessages = chatMessageFacadeService.getChatMessagesBySessionIdRecently(chatSessionId, messageLength);
+        List<ChatMessageDTO> chatMessages = normalizeMemoryWindow(
+                chatMessageFacadeService.getChatMessagesBySessionIdRecently(chatSessionId, messageLength));
         List<Message> memory = new ArrayList<>();
         for (ChatMessageDTO chatMessageDTO : chatMessages) {
+            ChatMessageDTO.MetaData metadata = chatMessageDTO.getMetadata();
             switch (chatMessageDTO.getRole()) {
                 case SYSTEM:
                     if (!StringUtils.hasLength(chatMessageDTO.getContent())) continue;
@@ -91,17 +94,16 @@ public class JChatMindFactory {
                     memory.add(new UserMessage(chatMessageDTO.getContent()));
                     break;
                 case ASSISTANT:
+                    // metadata 可能缺失（如 AI_ERROR 错误落库消息），此时仅保留文本内容
                     memory.add(AssistantMessage.builder()
                             .content(chatMessageDTO.getContent())
-                            .toolCalls(chatMessageDTO.getMetadata()
-                                    .getToolCalls())
+                            .toolCalls(hasToolCalls(chatMessageDTO) ? metadata.getToolCalls() : List.of())
                             .build());
                     break;
                 case TOOL:
+                    // normalizeMemoryWindow 的本契约保证此处 TOOL 消息必携带 toolResponse
                     memory.add(ToolResponseMessage.builder()
-                            .responses(List.of(chatMessageDTO
-                                    .getMetadata()
-                                    .getToolResponse()))
+                            .responses(List.of(metadata.getToolResponse()))
                             .build());
                     break;
                 default:
@@ -113,6 +115,69 @@ public class JChatMindFactory {
             }
         }
         return memory;
+    }
+
+    private static boolean hasToolCalls(ChatMessageDTO message) {
+        return message.getMetadata() != null
+                && message.getMetadata().getToolCalls() != null
+                && !message.getMetadata().getToolCalls().isEmpty();
+    }
+
+    private static boolean hasToolResponse(ChatMessageDTO message) {
+        return message.getMetadata() != null
+                && message.getMetadata().getToolResponse() != null;
+    }
+
+    /**
+     * 规范化记忆窗口切片为模型合法的历史序列（返回新列表，非视图）：
+     * 1. 头部锚定：窗口可能从半个 Think-Execute 对（孤立的 TOOL 消息、缺失 tool 结果的
+     *    ASSISTANT toolCalls）开始，丢弃这些半对痕迹直到锚定 USER / SYSTEM——
+     *    纯文本 ASSISTANT（完整回答）不丢弃，避免误删合法上下文；
+     * 2. 成对校验：assistant(toolCalls) 与后随的 0..n 条 tool 响应构成一个工具对，
+     *    未接响应的悬空对（如工具执行异常后 AI_ERROR 落库的
+     *    [assistant(toolCalls), assistant] 序列）整对丢弃；连续的工具对逐一保留。
+     * 输出契约：被输出的 TOOL 消息必携带 toolResponse。
+     */
+    static List<ChatMessageDTO> normalizeMemoryWindow(List<ChatMessageDTO> chatMessages) {
+        int start = 0;
+        while (start < chatMessages.size() && !isHeadAnchor(chatMessages.get(start))) {
+            start++;
+        }
+        List<ChatMessageDTO> result = new ArrayList<>();
+        // 未闭合的工具对：首元素为 assistant(toolCalls)，之后追加 0..n 条 tool 响应
+        List<ChatMessageDTO> openPair = new ArrayList<>();
+        for (int i = start; i < chatMessages.size(); i++) {
+            ChatMessageDTO message = chatMessages.get(i);
+            RoleType role = message.getRole();
+            if (role == RoleType.ASSISTANT && hasToolCalls(message)) {
+                flushPair(openPair, result);
+                openPair.add(message);
+            } else if (role == RoleType.TOOL) {
+                if (!openPair.isEmpty() && hasToolResponse(message)) {
+                    openPair.add(message);
+                }
+            } else {
+                flushPair(openPair, result);
+                result.add(message);
+            }
+        }
+        flushPair(openPair, result);
+        return result;
+    }
+
+    /** 头部锚点：USER / SYSTEM / 无 toolCalls 的纯文本 ASSISTANT；其余视为半对痕迹 */
+    private static boolean isHeadAnchor(ChatMessageDTO message) {
+        RoleType role = message.getRole();
+        return role == RoleType.USER || role == RoleType.SYSTEM
+                || role == RoleType.ASSISTANT && !hasToolCalls(message);
+    }
+
+    /** 闭合工具对：含 tool 响应（size > 1）才保留，悬空的 [assistant(toolCalls)] 整对丢弃 */
+    private static void flushPair(List<ChatMessageDTO> openPair, List<ChatMessageDTO> result) {
+        if (openPair.size() > 1) {
+            result.addAll(openPair);
+        }
+        openPair.clear();
     }
 
     private AgentDTO toAgentConfig(Agent agent) {
@@ -210,7 +275,6 @@ public class JChatMindFactory {
                 agent.getDescription(),
                 agent.getSystemPrompt(),
                 chatClient,
-                agentConfig.getChatOptions().getMessageLength(),
                 memory,
                 toolCallbacks,
                 knowledgeBases,

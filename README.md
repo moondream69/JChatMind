@@ -18,7 +18,7 @@
 - **RAG 知识库**：Markdown 解析分块 → bge-m3 嵌入（1024 维）→ pgvector 相似度检索（L2 距离，ivfflat 索引，Top-K=3）。
 - **多模型架构**：ChatClientRegistry 注册表模式管理模型实例，DeepSeek / 智谱 GLM 可切换，扩展新模型零侵入。
 - **SSE 实时通信**：思考 / 执行 / 完成状态实时推送，执行过程可视化。
-- **对话记忆持久化**：所有消息落库，下次提问自动恢复上下文，支持断点续聊（按 Agent 配置的**消息窗口长度** `chat_options.messageLength` 恢复**最近 N 条**，早期消息自动移出记忆）。
+- **对话记忆持久化**：所有消息落库，下次提问自动恢复上下文，支持断点续聊——每次提问按 Agent 配置的**消息窗口长度** `chat_options.messageLength` 重新恢复**最近 N 条**（早期消息自动移出记忆），并经**窗口规范化**（丢弃截断在工具调用对之间的半对痕迹、悬空的 toolCalls / 孤儿 tool 响应——这类非法历史会导致部分模型 API 拒绝请求）；一次运行内内存层不设窗口，模型完整携带本轮工具调用链。
 - **多 Agent 管理**：每个 Agent 独立配置系统提示词、模型、可用工具与可用知识库（JSONB 存储）。
 
 ## 技术栈
@@ -238,6 +238,7 @@ npm run dev                # 默认端口 5173（CORS 已放行 localhost 任意
 | `databaseQuery` | 可选 | 在 PostgreSQL 执行只读 SELECT，拒绝非 SELECT 语句，结果格式化为 ASCII 表格 |
 | 文件系统工具 | 可选 | 本地文件读写 |
 | 邮件工具 | 可选 | 通过 QQ 邮箱 SMTP 发送邮件 |
+| `weather` / `getCity` / `getDate` | 固定（实验） | 教学/实验工具（`tools/test/` 包），注入即被模型可调用；未被业务引用，保留供演示与扩展 |
 
 Agent 的 `allowed_tools`（JSONB）决定挂载哪些可选工具。
 

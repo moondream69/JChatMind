@@ -32,6 +32,10 @@ npm run lint                   # eslint
 
 注意：`@SpringBootTest` 冒烟测试需要完整环境（PostgreSQL 在跑 + `.env` 存在），不是纯单元测试。
 
+## 工作流约定
+
+功能开发、修复、重构完成后：先 `/code-review`，再 `/simplify` 收尾（用户约定，2026-08-27）。
+
 ## 架构大图景
 
 ### 请求 → Agent 执行的链路（事件驱动，读 4 个文件才能看到全貌）
@@ -42,7 +46,7 @@ npm run lint                   # eslint
 
 `create()` 每次调用都从零装配一个 JChatMind 实例，全部来自数据库：
 1. `loadAgent`：读 `agent` 表（system_prompt、model、allowed_tools / allowed_kbs / chat_options 三个 JSONB 字段）；
-2. `loadMemory`：把 `chat_message` 表最近 N 条（`chat_options.messageLength`）恢复成 Spring AI 的 `Message` 列表（system/user/assistant+toolCalls/tool 四种角色转换）——实现断点续聊；
+2. `loadMemory`：把 `chat_message` 表最近 N 条（`chat_options.messageLength`）恢复成 Spring AI 的 `Message` 列表（system/user/assistant+toolCalls/tool 四种角色转换）——实现断点续聊。恢复时经 `normalizeMemoryWindow` 窗口规范化（丢弃半对痕迹/悬空工具对与孤儿 tool——部分模型 API 对非法工具序列直接拒绝 HTTP 400；AI_ERROR 落库消息 metadata 为 null，loadMemory 判空仅保留文本）；内存层 `MessageWindowChatMemory` 的 `maxMessages` 为 `Integer.MAX_VALUE`，刻意不按条数截断（内存层窗口截断会切开工具对），一次 run 内上下文 = 窗口历史 + 本轮工具链；
 3. `resolveRuntimeTools`：固定工具（FIXED）+ 按 `allowed_tools` 启用的可选工具（OPTIONAL）；
 4. `resolveRuntimeKnowledgeBases`：按 `allowed_kbs` 加载知识库描述（会拼进 thinkPrompt 告诉模型）；
 5. `chatClientRegistry.get(agent.getModel())` 取模型实例。
@@ -52,7 +56,8 @@ npm run lint                   # eslint
 - `think()`：把 `chatMemory` 全部历史 + 决策模块 system 提示（告知知识库列表）交给大模型，返回 `toolCalls`；
 - `execute()`：`ToolCallingManager.executeToolCalls()` 手动执行工具——构造 ChatClient 时已显式关闭 Spring AI 内部自动执行（`internalToolExecutionEnabled(false)`），这是本项目刻意的手动接管设计；
 - `MAX_STEPS = 20` 防无限循环；`terminate` 工具 → `FINISHED`；
-- 每轮 assistant/tool 消息都 `saveMessage` 持久化 + `refreshPendingMessages` SSE 推送（`pendingChatMessages` 队列机制）。
+- 每轮 assistant/tool 消息都 `saveMessage` 持久化 + `refreshPendingMessages` SSE 推送（`pendingChatMessages` 队列机制）；
+- ⚠️ 历史序列必须保持「工具对」完整（assistant(toolCalls) ↔ tool 响应），孤儿 tool / 悬空 toolCalls 会被部分模型 API 拒绝（HTTP 400，DeepSeek/glm 实测）；新增持久化或窗口化逻辑时勿引入会把对切开的截断。
 
 ### 工具框架
 

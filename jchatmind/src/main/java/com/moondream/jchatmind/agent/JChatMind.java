@@ -65,8 +65,6 @@ public class JChatMind {
     // 最多循环次数
     private static final Integer MAX_STEPS = 20;
 
-    private static final Integer DEFAULT_MAX_MESSAGES = 20;
-
     // SpringAI 自带的 ChatOptions, 不是 AgentDTO.ChatOptions
     private ChatOptions chatOptions;
 
@@ -91,7 +89,6 @@ public class JChatMind {
                      String description,
                      String systemPrompt,
                      ChatClient chatClient,
-                     Integer maxMessages,
                      List<Message> memory,
                      List<ToolCallback> availableTools,
                      List<KnowledgeBaseDTO> availableKbs,
@@ -119,12 +116,17 @@ public class JChatMind {
         this.agentState = AgentState.IDLE;
 
         // 保存聊天记录
+        // 内存层不设窗口上限(截断唯一由 JChatMindFactory.loadMemory 按 messageLength 控制并规范化):
+        // 若内存层也按条数截断,工具调用对(assistant(toolCalls) -> tool)可能被从中间切开,
+        // 产生孤儿 tool 消息,部分模型 API(DeepSeek/glm-4.6)会拒绝:HTTP 400
         this.chatMemory = MessageWindowChatMemory.builder()
-                .maxMessages(maxMessages == null ? DEFAULT_MAX_MESSAGES : maxMessages)
+                .maxMessages(Integer.MAX_VALUE)
                 .build();
         this.chatMemory.add(chatSessionId, memory);
 
-        // 添加系统提示
+        // 添加系统提示(保持在 memory 之后:MessageWindowChatMemory 的 process() 会对“新加入的
+        // SystemMessage”做 hasNewSystemMessage 去重——若 memory 中含 DB 恢复的 system 行,
+        // agent 配置的 systemPrompt 必须是后由新加入的那一条才能生效)
         if (StringUtils.hasLength(systemPrompt)) {
             this.chatMemory.add(chatSessionId, new SystemMessage(systemPrompt));
         }
